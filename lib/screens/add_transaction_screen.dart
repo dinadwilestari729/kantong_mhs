@@ -27,25 +27,24 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
     super.dispose();
   }
 
-  void _selectDate(BuildContext context) {
-    showDatePicker(
+  Future<void> _selectDate(BuildContext context) async {
+    final DateTime? picked = await showDatePicker(
       context: context,
       initialDate: _selectedDate,
       firstDate: DateTime(2020),
       lastDate: DateTime.now(),
-    ).then((picked) {
-      if (picked != null && picked != _selectedDate) {
-        setState(() {
-          _selectedDate = picked;
-        });
-      }
-    });
+    );
+    if (picked != null && picked != _selectedDate) {
+      setState(() {
+        _selectedDate = picked;
+      });
+    }
   }
 
   void _saveTransaction() {
     if (_formKey.currentState!.validate()) {
       final amount = double.parse(_amountController.text);
-
+      
       if (_selectedType == 'pengeluaran' && amount > widget.currentBalance) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -55,12 +54,12 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
         );
         return;
       }
-      
+
       Navigator.pop(context, {
         'amount': amount,
-        'description': _descriptionController.text,
+        'description': _descriptionController.text.trim(),
         'type': _selectedType,
-        'date': _selectedDate,
+        'date': _selectedDate,  
       });
     }
   }
@@ -71,6 +70,8 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
       appBar: AppBar(
         title: const Text('Tambah Transaksi'),
         centerTitle: true,
+        backgroundColor: Colors.green,
+        foregroundColor: Colors.white,
       ),
       body: Form(
         key: _formKey,
@@ -118,6 +119,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
             
             const SizedBox(height: 16),
             
+            // Deskripsi
             TextFormField(
               controller: _descriptionController,
               decoration: const InputDecoration(
@@ -134,7 +136,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
             ),
             
             const SizedBox(height: 16),
-            
+
             InkWell(
               onTap: () => _selectDate(context),
               child: InputDecorator(
@@ -150,7 +152,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
             ),
             
             const SizedBox(height: 32),
-            
+
             ElevatedButton(
               onPressed: _saveTransaction,
               style: ElevatedButton.styleFrom(

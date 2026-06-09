@@ -199,7 +199,9 @@ class _MissionScreenState extends State<MissionScreen> {
               itemCount: _missions.length,
               itemBuilder: (context, index) {
                 final mission = _missions[index];
-                final progress = mission['current'] / mission['target'];
+                final current = (mission['current'] as num).toDouble();
+                final target = (mission['target'] as num).toDouble();
+                final progress = current / target;
                 final deadline = DateTime.parse(mission['deadline']);
                 final remainingDays = deadline.difference(DateTime.now()).inDays;
                 final isCompleted = progress >= 1;
@@ -261,11 +263,11 @@ class _MissionScreenState extends State<MissionScreen> {
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             Text(
-                              _formatCurrency(mission['current']),
+                              _formatCurrency(current),
                               style: const TextStyle(fontSize: 12),
                             ),
                             Text(
-                              _formatCurrency(mission['target']),
+                              _formatCurrency(target),
                               style: const TextStyle(fontSize: 12),
                             ),
                           ],

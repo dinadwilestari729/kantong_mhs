@@ -25,17 +25,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
       _isLoading = true;
     });
     
-    final currentUser = await AuthService.getCurrentUser();
+    try {
+      final currentUser = await AuthService.getCurrentUser();
 
-    if (!mounted) return;
-    
-    setState(() {
-      if (currentUser != null) {
-        _userName = currentUser['name'];
-        _userEmail = currentUser['email'];
-      }
-      _isLoading = false;
-    });
+      if (!mounted) return;
+      
+      setState(() {
+        if (currentUser != null) {
+          _userName = currentUser['name'] ?? '';
+          _userEmail = currentUser['email'] ?? '';
+        }
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+      });
+    }
   }
 
   Future<void> _saveProfile(String name, String email) async {
@@ -115,15 +122,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ],
       ),
     );
-    
-    // CEK APAKAH WIDGET MASIH TERPASANG
+
     if (!mounted) return;
     
     if (confirm == true) {
       await AuthService.logout();
       await StorageService.clearAllData();
-      
-      // CEK LAGI SETELAH AWAIT
+
       if (!mounted) return;
       Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
     }

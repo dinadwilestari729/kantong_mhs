@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import '../services/storage_service.dart';
 import '../services/auth_service.dart';
+import '../services/storage_service.dart';
 import 'add_transaction_screen.dart';
+import 'mission_screen.dart';
+import 'profile_screen.dart';
+import 'transactions_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -12,15 +15,15 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  static const int _selectedIndex = 0;
-  
+  int _selectedIndex = 0;
+
   String _userName = '';
-  
+
   double _currentBalance = 0;
   double _totalPemasukan = 0;
   double _totalPengeluaran = 0;
   List<Map<String, dynamic>> _transactions = [];
-  
+
   bool _isLoading = true;
 
   @override
@@ -30,145 +33,82 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _loadData() async {
-    if (!mounted) return;
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+    });
 
     try {
-      final results = await Future.wait([
-        AuthService.getCurrentUser(),
-        StorageService.loadAllData(),
-      ]).timeout(
-        const Duration(seconds: 8),
-        onTimeout: () => [null, StorageService.defaultData()],
-      );
+      final currentUser = await AuthService.getCurrentUser();
+      if (currentUser != null) {
+        _userName = currentUser['name'] ?? 'Pengguna';
+      }
 
-      final currentUser = results[0]; // Map<String, dynamic>? — sudah inferred
-      final data = results[1] ?? StorageService.defaultData(); // fallback jika null
+      final data = await StorageService.loadAllData();
 
       if (!mounted) return;
+
       setState(() {
-        if (currentUser != null) {
-          _userName = currentUser['name']?.toString() ?? '';
-        }
         _currentBalance = (data['balance'] as num?)?.toDouble() ?? 0;
         _totalPemasukan = (data['totalPemasukan'] as num?)?.toDouble() ?? 0;
         _totalPengeluaran = (data['totalPengeluaran'] as num?)?.toDouble() ?? 0;
-        final rawList = data['transactions'];
-        _transactions = rawList is List
-            ? rawList.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList()
-            : [];
+        _transactions = List<Map<String, dynamic>>.from(data['transactions'] ?? []);
         _isLoading = false;
       });
     } catch (e) {
-      debugPrint('_loadData error: $e');
+      print('❌ Error loading data: $e');
       if (!mounted) return;
-      setState(() => _isLoading = false);
+      setState(() {
+        _isLoading = false;
+      });
     }
   }
 
-  Future<void> _saveData() async {
-    await StorageService.saveAllData(
-      balance: _currentBalance,
-      totalPemasukan: _totalPemasukan,
-      totalPengeluaran: _totalPengeluaran,
-      transactions: _transactions,
-      missions: [],
-    );
-  }
+  Future<void> _addTransaction(
+      double amount, String description, String type, DateTime date) async {
+    double newBalance = _currentBalance;
+    double newTotalPemasukan = _totalPemasukan;
+    double newTotalPengeluaran = _totalPengeluaran;
 
-  Future<void> _addTransaction(double amount, String description, String type) async {
+    if (type == 'pemasukan') {
+      newBalance += amount;
+      newTotalPemasukan += amount;
+    } else {
+      newBalance -= amount;
+      newTotalPengeluaran += amount;
+    }
+
+    final newTransaction = {
+      'id': DateTime.now().millisecondsSinceEpoch,
+      'amount': amount,
+      'description': description,
+      'type': type,
+      'transaction_date': date.toIso8601String().split('T')[0],
+    };
+
+    final updatedTransactions = [newTransaction, ..._transactions];
+
+    await StorageService.saveAllData(
+      balance: newBalance,
+      totalPemasukan: newTotalPemasukan,
+      totalPengeluaran: newTotalPengeluaran,
+      transactions: updatedTransactions,
+      missions: List<Map<String, dynamic>>.from(
+          (await StorageService.loadAllData())['missions'] ?? []),
+    );
+
+    if (!mounted) return;
+
     setState(() {
-      final newTransaction = {
-        'id': DateTime.now().millisecondsSinceEpoch,
-        'amount': amount,
-        'description': description,
-        'date': DateTime.now().toIso8601String(),
-        'type': type,
-      };
-      _transactions.insert(0, newTransaction);
-      
-      if (type == 'pemasukan') {
-        _currentBalance += amount;
-        _totalPemasukan += amount;
-      } else {
-        _currentBalance -= amount;
-        _totalPengeluaran += amount;
-      }
+      _currentBalance = newBalance;
+      _totalPemasukan = newTotalPemasukan;
+      _totalPengeluaran = newTotalPengeluaran;
+      _transactions = updatedTransactions;
     });
 
-    await _saveData();
-
-    if (type == 'pengeluaran') {
-      await _updateMissionProgress(description, amount);
-    }
-  }
-
-  Future<void> _updateMissionProgress(String description, double amount) async {
-    final data = await StorageService.loadAllData();
-    List<Map<String, dynamic>> missions = List<Map<String, dynamic>>.from(data['missions']);
-    
-    bool missionUpdated = false;
-    
-    for (int i = 0; i < missions.length; i++) {
-      final mission = missions[i];
-      
-      if (mission['current'] < mission['target']) {
-        String missionTitle = mission['title'].toLowerCase();
-        String descLower = description.toLowerCase();
-        
-        bool isRelevant = false;
-        if (missionTitle.contains('makan') && (descLower.contains('makan') || descLower.contains('resto'))) {
-          isRelevant = true;
-        } else if (missionTitle.contains('belanja') && (descLower.contains('belanja') || descLower.contains('shop'))) {
-          isRelevant = true;
-        } else if (missionTitle.contains('transport') && (descLower.contains('transport') || descLower.contains('gojek') || descLower.contains('grab'))) {
-          isRelevant = true;
-        } else if (missionTitle.contains('hiburan') && (descLower.contains('nonton') || descLower.contains('game'))) {
-          isRelevant = true;
-        }
-        
-        if (isRelevant || missionTitle.contains('hemat')) {
-          double newCurrent = mission['current'] + amount;
-          missions[i]['current'] = newCurrent > mission['target'] ? mission['target'] : newCurrent;
-          missionUpdated = true;
-          
-          if (newCurrent >= mission['target']) {
-            _showMissionCompleteDialog(mission['title'], mission['reward']);
-          }
-        }
-      }
-    }
-    
-    if (missionUpdated) {
-      await StorageService.saveMissions(missions);
-      if (_selectedIndex == 1) {
-        setState(() {});
-      }
-    }
-  }
-
-  void _showMissionCompleteDialog(String missionTitle, int reward) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('🎉 Selamat!'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.emoji_events, size: 50, color: Colors.orange),
-            const SizedBox(height: 16),
-            Text('Misi "$missionTitle" selesai!'),
-            const SizedBox(height: 8),
-            Text('Anda mendapat $reward poin!', style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('OK'),
-          ),
-        ],
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Transaksi berhasil ditambahkan'),
+        backgroundColor: Colors.green,
       ),
     );
   }
@@ -202,30 +142,71 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     return Scaffold(
-      body: _buildHomeContent(),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () async {
-          final result = await Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => AddTransactionScreen(
-                currentBalance: _currentBalance,
-              ),
-            ),
-          );
-          
-          if (result != null && result is Map<String, dynamic>) {
-            await _addTransaction(
-              result['amount'],
-              result['description'],
-              result['type'],
-            );
-          }
+      body: _getScreen(_selectedIndex),
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: _selectedIndex,
+        onTap: (index) {
+          setState(() {
+            _selectedIndex = index;
+          });
         },
-        icon: const Icon(Icons.add),
-        label: const Text('Tambah Transaksi'),
+        type: BottomNavigationBarType.fixed,
+        selectedItemColor: Colors.green,
+        unselectedItemColor: Colors.grey,
+        items: const [
+          BottomNavigationBarItem(
+            icon: Icon(Icons.home),
+            label: 'Beranda',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.flag),
+            label: 'Misi',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.person),
+            label: 'Profil',
+          ),
+        ],
       ),
+      floatingActionButton: _selectedIndex == 0
+          ? FloatingActionButton.extended(
+              onPressed: () async {
+                final result = await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => AddTransactionScreen(
+                      currentBalance: _currentBalance,
+                    ),
+                  ),
+                );
+
+                if (result != null && result is Map<String, dynamic>) {
+                  await _addTransaction(
+                    result['amount'],
+                    result['description'],
+                    result['type'],
+                    result['date'],
+                  );
+                }
+              },
+              icon: const Icon(Icons.add),
+              label: const Text('Tambah Transaksi'),
+            )
+          : null,
     );
+  }
+
+  Widget _getScreen(int index) {
+    switch (index) {
+      case 0:
+        return _buildHomeContent();
+      case 1:
+        return const MissionScreen();
+      case 2:
+        return const ProfileScreen();
+      default:
+        return _buildHomeContent();
+    }
   }
 
   Widget _buildHomeContent() {
@@ -246,114 +227,125 @@ class _HomeScreenState extends State<HomeScreen> {
         backgroundColor: Colors.green,
         foregroundColor: Colors.white,
       ),
-      body: CustomScrollView(
-        slivers: [
-          SliverToBoxAdapter(
-            child: Container(
-              margin: const EdgeInsets.all(16),
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [Color(0xFF4CAF50), Color(0xFF2E7D32)],
+      body: RefreshIndicator(
+        onRefresh: _loadData,
+        child: CustomScrollView(
+          slivers: [
+            SliverToBoxAdapter(
+              child: Container(
+                margin: const EdgeInsets.all(16),
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [Color(0xFF4CAF50), Color(0xFF2E7D32)],
+                  ),
+                  borderRadius: BorderRadius.circular(20),
                 ),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Saldo Anda',
-                    style: TextStyle(color: Colors.white70, fontSize: 14),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    _formatCurrency(_currentBalance),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 28,
-                      fontWeight: FontWeight.bold,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Saldo Anda',
+                      style: TextStyle(color: Colors.white70, fontSize: 14),
                     ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: _buildSummaryCard(
-                      title: 'Pemasukan',
-                      amount: _totalPemasukan,
-                      color: Colors.green,
-                      icon: Icons.arrow_downward,
+                    const SizedBox(height: 8),
+                    Text(
+                      _formatCurrency(_currentBalance),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 28,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _buildSummaryCard(
-                      title: 'Pengeluaran',
-                      amount: _totalPengeluaran,
-                      color: Colors.red,
-                      icon: Icons.arrow_upward,
+                  ],
+                ),
+              ),
+            ),
+
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: _buildSummaryCard(
+                        title: 'Pemasukan',
+                        amount: _totalPemasukan,
+                        color: Colors.green,
+                        icon: Icons.arrow_downward,
+                      ),
                     ),
-                  ),
-                ],
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _buildSummaryCard(
+                        title: 'Pengeluaran',
+                        amount: _totalPengeluaran,
+                        color: Colors.red,
+                        icon: Icons.arrow_upward,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
-          
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text(
-                    '📋 Riwayat Transaksi',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                  ),
-                  TextButton(
-                    onPressed: () {},
-                    child: const Text('Lihat Semua'),
-                  ),
-                ],
+
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      '📋 Riwayat Transaksi',
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                    ),
+                    TextButton(
+                      onPressed: () async {
+                        await Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const TransactionsScreen(),
+                          ),
+                        );
+                        _loadData();
+                      },
+                      child: const Text('Lihat Semua'),
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
-          
-          SliverList(
-            delegate: SliverChildBuilderDelegate(
-              (context, index) {
-                if (index >= _transactions.length) {
-                  return const SizedBox.shrink();
-                }
-                final transaction = _transactions[index];
-                return _buildTransactionItem(transaction);
-              },
-              childCount: _transactions.length > 5 ? 5 : _transactions.length,
+
+            SliverList(
+              delegate: SliverChildBuilderDelegate(
+                (context, index) {
+                  if (index >= _transactions.length) {
+                    return const SizedBox.shrink();
+                  }
+                  final transaction = _transactions[index];
+                  return _buildTransactionItem(transaction);
+                },
+                childCount: _transactions.length > 5 ? 5 : _transactions.length,
+              ),
             ),
-          ),
-          
-          if (_transactions.isEmpty)
+
+            if (_transactions.isEmpty)
+              const SliverToBoxAdapter(
+                child: Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(32),
+                    child: Text('Belum ada transaksi'),
+                  ),
+                ),
+              ),
+
             const SliverToBoxAdapter(
-              child: Center(
-                child: Padding(
-                  padding: EdgeInsets.all(32),
-                  child: Text('Belum ada transaksi'),
-                ),
-              ),
+              child: SizedBox(height: 80),
             ),
-          
-          const SliverToBoxAdapter(
-            child: SizedBox(height: 80),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -390,29 +382,93 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Future<void> _deleteTransaction(Map<String, dynamic> transaction) async {
+    final amount = (transaction['amount'] as num?)?.toDouble() ?? 0;
+    final type = transaction['type'];
+
+    double newBalance = _currentBalance;
+    double newTotalPemasukan = _totalPemasukan;
+    double newTotalPengeluaran = _totalPengeluaran;
+
+    if (type == 'pemasukan') {
+      newBalance -= amount;
+      newTotalPemasukan -= amount;
+    } else {
+      newBalance += amount;
+      newTotalPengeluaran -= amount;
+    }
+
+    final updatedTransactions = _transactions.where((t) => t['id'] != transaction['id']).toList();
+
+    await StorageService.saveAllData(
+      balance: newBalance,
+      totalPemasukan: newTotalPemasukan,
+      totalPengeluaran: newTotalPengeluaran,
+      transactions: updatedTransactions,
+      missions: List<Map<String, dynamic>>.from(
+          (await StorageService.loadAllData())['missions'] ?? []),
+    );
+
+    if (!mounted) return;
+
+    setState(() {
+      _currentBalance = newBalance;
+      _totalPemasukan = newTotalPemasukan;
+      _totalPengeluaran = newTotalPengeluaran;
+      _transactions = updatedTransactions;
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Transaksi berhasil dihapus'),
+        backgroundColor: Colors.red,
+      ),
+    );
+  }
+
   Widget _buildTransactionItem(Map<String, dynamic> transaction) {
     final isPemasukan = transaction['type'] == 'pemasukan';
-    final date = DateTime.parse(transaction['date']);
-    
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      child: ListTile(
-        leading: CircleAvatar(
-          backgroundColor: isPemasukan 
-              ? Colors.green.withValues(alpha: 0.2)
-              : Colors.red.withValues(alpha: 0.2),
-          child: Icon(
-            isPemasukan ? Icons.add : Icons.remove,
-            color: isPemasukan ? Colors.green : Colors.red,
+    DateTime? date;
+    try {
+      date = DateTime.parse(transaction['transaction_date']);
+    } catch (_) {
+      date = DateTime.now();
+    }
+
+    final amount = (transaction['amount'] as num?)?.toDouble() ?? 0;
+
+    return Dismissible(
+      key: Key(transaction['id'].toString()),
+      direction: DismissDirection.endToStart,
+      background: Container(
+        color: Colors.red,
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        child: const Icon(Icons.delete, color: Colors.white),
+      ),
+      onDismissed: (direction) {
+        _deleteTransaction(transaction);
+      },
+      child: Card(
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        child: ListTile(
+          leading: CircleAvatar(
+            backgroundColor: isPemasukan
+                ? Colors.green.withValues(alpha: 0.2)
+                : Colors.red.withValues(alpha: 0.2),
+            child: Icon(
+              isPemasukan ? Icons.add : Icons.remove,
+              color: isPemasukan ? Colors.green : Colors.red,
+            ),
           ),
-        ),
-        title: Text(transaction['description']),
-        subtitle: Text('${date.day}/${date.month}/${date.year}'),
-        trailing: Text(
-          _formatCurrency(transaction['amount']),
-          style: TextStyle(
-            color: isPemasukan ? Colors.green : Colors.red,
-            fontWeight: FontWeight.bold,
+          title: Text(transaction['description'] ?? 'Transaksi'),
+          subtitle: Text('${date.day}/${date.month}/${date.year}'),
+          trailing: Text(
+            _formatCurrency(amount),
+            style: TextStyle(
+              color: isPemasukan ? Colors.green : Colors.red,
+              fontWeight: FontWeight.bold,
+            ),
           ),
         ),
       ),
