@@ -1,7 +1,12 @@
 import 'package:flutter/material.dart';
-import 'screens/home_screen.dart';
+import 'screens/splash_screen.dart';
+import 'services/storage_service.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  await StorageService.init();
+
   runApp(const MyApp());
 }
 
@@ -11,13 +16,16 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      debugShowCheckedModeBanner: false,
       title: 'KantongMhs',
+      debugShowCheckedModeBanner: false,
       theme: ThemeData(
+        primarySwatch: Colors.green,
         useMaterial3: true,
-        colorSchemeSeed: const Color.fromARGB(255, 76, 117, 175),
       ),
-      home: const HomeScreen(),
+      initialRoute: '/',
+      routes: {
+        '/': (context) => const SplashScreen(),
+      },
     );
   }
 }
