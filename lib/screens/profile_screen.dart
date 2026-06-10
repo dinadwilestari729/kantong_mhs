@@ -1,65 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../providers/auth_provider.dart';
 import '../services/storage_service.dart';
-import '../services/auth_service.dart';
 
-class ProfileScreen extends StatefulWidget {
+class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
 
-  @override
-  State<ProfileScreen> createState() => _ProfileScreenState();
-}
-
-class _ProfileScreenState extends State<ProfileScreen> {
-  String _userName = '';
-  String _userEmail = '';
-  bool _isLoading = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadProfile();
-  }
-
-  Future<void> _loadProfile() async {
-    setState(() {
-      _isLoading = true;
-    });
-    
-    try {
-      final currentUser = await AuthService.getCurrentUser();
-
-      if (!mounted) return;
-      
-      setState(() {
-        if (currentUser != null) {
-          _userName = currentUser['name'] ?? '';
-          _userEmail = currentUser['email'] ?? '';
-        }
-        _isLoading = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _isLoading = false;
-      });
-    }
-  }
-
-  Future<void> _saveProfile(String name, String email) async {
-    setState(() {
-      _userName = name;
-      _userEmail = email;
-    });
-    
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Profil berhasil diupdate')),
-    );
-  }
-
-  void _showEditProfileDialog() {
-    final nameController = TextEditingController(text: _userName);
-    final emailController = TextEditingController(text: _userEmail);
+  void _showEditProfileDialog(BuildContext context, AuthProvider authProvider) {
+    final nameController = TextEditingController(text: authProvider.userName);
+    final emailController = TextEditingController(text: authProvider.userEmail);
     
     showDialog(
       context: context,
@@ -70,30 +19,26 @@ class _ProfileScreenState extends State<ProfileScreen> {
           children: [
             TextField(
               controller: nameController,
-              decoration: const InputDecoration(
-                labelText: 'Nama',
-                border: OutlineInputBorder(),
-              ),
+              decoration: const InputDecoration(labelText: 'Nama', border: OutlineInputBorder()),
             ),
             const SizedBox(height: 12),
             TextField(
               controller: emailController,
-              decoration: const InputDecoration(
-                labelText: 'Email',
-                border: OutlineInputBorder(),
-              ),
+              decoration: const InputDecoration(labelText: 'Email', border: OutlineInputBorder()),
             ),
           ],
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Batal'),
-          ),
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Batal')),
           ElevatedButton(
             onPressed: () async {
               final nav = Navigator.of(context);
-              await _saveProfile(nameController.text, emailController.text);
+              await authProvider.updateUserData(nameController.text, emailController.text);
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Profil berhasil diupdate')),
+                );
+              }
               nav.pop();
             },
             child: const Text('Simpan'),
@@ -103,17 +48,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Future<void> _logout() async {
+  Future<void> _logout(BuildContext context, AuthProvider authProvider) async {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Konfirmasi Logout'),
         content: const Text('Apakah Anda yakin ingin logout? Data akan tetap tersimpan.'),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Batal'),
-          ),
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Batal')),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
@@ -123,28 +65,31 @@ class _ProfileScreenState extends State<ProfileScreen> {
       ),
     );
 
-    if (!mounted) return;
-    
-    if (confirm == true) {
-      await AuthService.logout();
+    if (confirm == true && context.mounted) {
+      await authProvider.logout();
       await StorageService.clearAllData();
-
-      if (!mounted) return;
-      Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
+      if (context.mounted) {
+        Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
+      }
     }
+  }
+
+  void _showDialog(BuildContext context, String title, String content) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(title),
+        content: Text(content),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Tutup')),
+        ],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
-      return const Scaffold(
-        body: Center(
-          child: CircularProgressIndicator(
-            valueColor: AlwaysStoppedAnimation<Color>(Colors.green),
-          ),
-        ),
-      );
-    }
+    final authProvider = context.watch<AuthProvider>();
 
     return Scaffold(
       appBar: AppBar(
@@ -157,26 +102,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            CircleAvatar(
+            const CircleAvatar(
               radius: 50,
               backgroundColor: Colors.green,
-              child: const Icon(
-                Icons.person,
-                size: 50,
-                color: Colors.white,
-              ),
+              child: Icon(Icons.person, size: 50, color: Colors.white),
             ),
             const SizedBox(height: 16),
             Text(
-              _userName,
-              style: const TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-              ),
+              authProvider.userName,
+              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
             Text(
-              _userEmail,
+              authProvider.userEmail,
               style: const TextStyle(color: Colors.grey),
             ),
             const SizedBox(height: 32),
@@ -188,40 +126,36 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     leading: const Icon(Icons.edit, color: Colors.green),
                     title: const Text('Edit Profil'),
                     trailing: const Icon(Icons.chevron_right),
-                    onTap: _showEditProfileDialog,
+                    onTap: () => _showEditProfileDialog(context, authProvider),
                   ),
                   const Divider(height: 1),
                   ListTile(
                     leading: const Icon(Icons.info_outline, color: Colors.blue),
                     title: const Text('Tentang Aplikasi'),
                     trailing: const Icon(Icons.chevron_right),
-                    onTap: () {
-                      _showDialog(
-                        context,
-                        'Tentang KantongMhs',
-                        'Aplikasi pencatatan keuangan untuk mahasiswa\n\nFitur:\n• Catat pemasukan/pengeluaran\n• Misi hemat dengan reward poin\n• Laporan keuangan\n• Data tersimpan otomatis',
-                      );
-                    },
+                    onTap: () => _showDialog(
+                      context,
+                      'Tentang KantongMhs',
+                      'Aplikasi pencatatan keuangan untuk mahasiswa\n\nFitur:\n• Catat pemasukan/pengeluaran\n• Misi hemat dengan reward poin\n• Laporan keuangan\n• Data tersimpan otomatis',
+                    ),
                   ),
                   const Divider(height: 1),
                   ListTile(
                     leading: const Icon(Icons.help_outline, color: Colors.orange),
                     title: const Text('Bantuan'),
                     trailing: const Icon(Icons.chevron_right),
-                    onTap: () {
-                      _showDialog(
-                        context,
-                        'Bantuan',
-                        '1. Tambah transaksi dengan tombol +\n2. Buat misi hemat di menu Misi\n3. Pantau progress misi Anda\n4. Data otomatis tersimpan',
-                      );
-                    },
+                    onTap: () => _showDialog(
+                      context,
+                      'Bantuan',
+                      '1. Tambah transaksi dengan tombol +\n2. Buat misi hemat di menu Misi\n3. Pantau progress misi Anda\n4. Data otomatis tersimpan',
+                    ),
                   ),
                   const Divider(height: 1),
                   ListTile(
                     leading: const Icon(Icons.logout, color: Colors.red),
                     title: const Text('Logout', style: TextStyle(color: Colors.red)),
                     trailing: const Icon(Icons.chevron_right, color: Colors.red),
-                    onTap: _logout,
+                    onTap: () => _logout(context, authProvider),
                   ),
                 ],
               ),
@@ -233,22 +167,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  void _showDialog(BuildContext context, String title, String content) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(title),
-        content: Text(content),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Tutup'),
-          ),
-        ],
       ),
     );
   }

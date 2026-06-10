@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../services/auth_service.dart';
+import '../services/api_service.dart';
 import 'login_screen.dart';
 import 'home_screen.dart';
 
@@ -20,7 +20,7 @@ class _SplashScreenState extends State<SplashScreen> {
   Future<void> _checkLoginStatus() async {
     await Future.delayed(const Duration(seconds: 2));
     
-    final isLoggedIn = await AuthService.isLoggedIn();
+    final isLoggedIn = await ApiService.isLoggedIn();
     
     if (mounted) {
       if (isLoggedIn) {

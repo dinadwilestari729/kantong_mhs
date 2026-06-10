@@ -45,11 +45,12 @@ class ApiService {
       
       if (data['success'] == true) {
         final prefs = await SharedPreferences.getInstance();
-        await prefs.setInt('user_id', data['user_id']);
+        final userId = int.parse(data['user_id'].toString());
+        await prefs.setInt('user_id', userId);
         await prefs.setString('user_name', data['name']);
         await prefs.setString('user_email', data['email']);
         await prefs.setBool('is_logged_in', true);
-        print('✅ Session saved: user_id=${data['user_id']}, name=${data['name']}');
+        print('✅ Session saved: user_id=$userId, name=${data['name']}');
       }
       
       return data;

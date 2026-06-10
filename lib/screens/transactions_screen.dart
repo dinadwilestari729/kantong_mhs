@@ -1,83 +1,29 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import '../services/storage_service.dart';
+import 'package:provider/provider.dart';
+import '../providers/auth_provider.dart';
+import '../providers/transaction_provider.dart';
 
-class TransactionsScreen extends StatefulWidget {
+class TransactionsScreen extends StatelessWidget {
   const TransactionsScreen({super.key});
 
-  @override
-  State<TransactionsScreen> createState() => _TransactionsScreenState();
-}
-
-class _TransactionsScreenState extends State<TransactionsScreen> {
-  List<Map<String, dynamic>> _transactions = [];
-  bool _isLoading = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadData();
-  }
-
-  Future<void> _loadData() async {
-    setState(() {
-      _isLoading = true;
-    });
-
-    try {
-      final data = await StorageService.loadAllData();
-      if (!mounted) return;
-      setState(() {
-        _transactions = List<Map<String, dynamic>>.from(data['transactions'] ?? []);
-        _isLoading = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _isLoading = false;
-      });
-    }
-  }
-
-  Future<void> _deleteTransaction(Map<String, dynamic> transaction) async {
-    final amount = (transaction['amount'] as num?)?.toDouble() ?? 0;
-    final type = transaction['type'];
-
-    final data = await StorageService.loadAllData();
-    double newBalance = (data['balance'] as num?)?.toDouble() ?? 0;
-    double newTotalPemasukan = (data['totalPemasukan'] as num?)?.toDouble() ?? 0;
-    double newTotalPengeluaran = (data['totalPengeluaran'] as num?)?.toDouble() ?? 0;
-
-    if (type == 'pemasukan') {
-      newBalance -= amount;
-      newTotalPemasukan -= amount;
-    } else {
-      newBalance += amount;
-      newTotalPengeluaran -= amount;
-    }
-
-    final updatedTransactions = _transactions.where((t) => t['id'] != transaction['id']).toList();
-
-    await StorageService.saveAllData(
-      balance: newBalance,
-      totalPemasukan: newTotalPemasukan,
-      totalPengeluaran: newTotalPengeluaran,
-      transactions: updatedTransactions,
-      missions: List<Map<String, dynamic>>.from(data['missions'] ?? []),
+  Future<void> _deleteTransaction(BuildContext context, Map<String, dynamic> transaction) async {
+    final authProvider = context.read<AuthProvider>();
+    final transactionProvider = context.read<TransactionProvider>();
+    
+    final success = await transactionProvider.deleteTransaction(
+      transaction['id'],
+      authProvider.userId,
     );
 
-    if (!mounted) return;
-
-    setState(() {
-      _transactions = updatedTransactions;
-    });
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Transaksi berhasil dihapus'),
-        backgroundColor: Colors.red,
-      ),
-    );
+    if (success && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Transaksi berhasil dihapus'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   String _formatCurrency(double amount) {
@@ -89,7 +35,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
     }
   }
 
-  Widget _buildTransactionItem(Map<String, dynamic> transaction) {
+  Widget _buildTransactionItem(BuildContext context, Map<String, dynamic> transaction) {
     final isPemasukan = transaction['type'] == 'pemasukan';
     DateTime? date;
     try {
@@ -98,7 +44,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
       date = DateTime.now();
     }
 
-    final amount = (transaction['amount'] as num?)?.toDouble() ?? 0;
+    final amount = double.tryParse(transaction['amount'].toString()) ?? 0;
 
     return Dismissible(
       key: Key(transaction['id'].toString()),
@@ -110,7 +56,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
         child: const Icon(Icons.delete, color: Colors.white),
       ),
       onDismissed: (direction) {
-        _deleteTransaction(transaction);
+        _deleteTransaction(context, transaction);
       },
       child: Card(
         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -140,27 +86,29 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final transactionProvider = context.watch<TransactionProvider>();
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Semua Transaksi'),
         backgroundColor: Colors.green,
         foregroundColor: Colors.white,
       ),
-      body: _isLoading
+      body: transactionProvider.isLoading && transactionProvider.transactions.isEmpty
           ? const Center(
               child: CircularProgressIndicator(
                 valueColor: AlwaysStoppedAnimation<Color>(Colors.green),
               ),
             )
-          : _transactions.isEmpty
+          : transactionProvider.transactions.isEmpty
               ? const Center(
                   child: Text('Belum ada transaksi'),
                 )
               : ListView.builder(
                   padding: const EdgeInsets.only(top: 8, bottom: 80),
-                  itemCount: _transactions.length,
+                  itemCount: transactionProvider.transactions.length,
                   itemBuilder: (context, index) {
-                    return _buildTransactionItem(_transactions[index]);
+                    return _buildTransactionItem(context, transactionProvider.transactions[index]);
                   },
                 ),
     );

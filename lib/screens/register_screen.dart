@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import '../services/auth_service.dart';
+import 'package:provider/provider.dart';
+import '../providers/auth_provider.dart';
 import 'login_screen.dart';
 
 class RegisterScreen extends StatefulWidget {
@@ -38,10 +39,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
       _isLoading = true;
     });
 
-    final result = await AuthService.register(
-      _emailController.text.trim(),
-      _passwordController.text,
+    final authProvider = context.read<AuthProvider>();
+    final success = await authProvider.register(
       _nameController.text.trim(),
+      _emailController.text.trim(),
+      _passwordController.text.trim(),
     );
 
     if (!mounted) return;
@@ -50,7 +52,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       _isLoading = false;
     });
 
-    if (result['success'] == true) {
+    if (success) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Registrasi berhasil! Silakan login.'),
@@ -63,8 +65,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
       );
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(result['message'] ?? 'Registrasi gagal!'),
+        const SnackBar(
+          content: Text('Registrasi gagal! Email mungkin sudah digunakan.'),
           backgroundColor: Colors.red,
         ),
       );
